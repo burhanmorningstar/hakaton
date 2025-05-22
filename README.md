@@ -1,4 +1,5 @@
 # Üretim Hattı Hata Tespit Sistemi
+Takım Adı: Staj Lazım
 #ttg5hackathon2025
 
 Bu proje, YOLOv8 tabanlı bir görüntü işleme modeli ile üretim hattında hata tespiti yapar. Sistem iki ana bileşenden oluşur:
