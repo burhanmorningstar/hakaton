@@ -40,25 +40,48 @@ const SummaryCard = ({ value, label, index }) => {
   );
 };
 
-const SummaryCards = ({ statistics }) => {
-  if (!statistics) return null;
+const SummaryCards = ({ statistics, product }) => {
+  if (!statistics || !product) return null;
+  
+  // Safe values with default to prevent errors
+  const productionCount = product.production_count || 0;
+  const errorCount = product.error_count || 0;
+  const errorRate = product.error_rate || 0;
+  const defectTypes = statistics.defect_types || {};
+  
+  // Format values safely
+  const formatNumber = (num) => {
+    try {
+      return (typeof num === 'number') ? num.toLocaleString() : '0';
+    } catch (e) {
+      return '0';
+    }
+  };
+  
+  const formatPercent = (num) => {
+    try {
+      return (typeof num === 'number') ? `${num.toFixed(2)}%` : '0.00%';
+    } catch (e) {
+      return '0.00%';
+    }
+  };
   
   const cards = [
     { 
-      value: statistics.total_products, 
-      label: "Toplam Ürün" 
-    },
-    { 
-      value: statistics.total_production.toLocaleString(), 
+      value: formatNumber(productionCount), 
       label: "Üretim Adeti" 
     },
     { 
-      value: statistics.total_errors.toLocaleString(), 
-      label: "Toplam Hata" 
+      value: formatNumber(errorCount), 
+      label: "Tespit Edilen Hata" 
     },
     { 
-      value: `${statistics.avg_error_rate.toFixed(2)}%`, 
-      label: "Ort. Hata" 
+      value: formatPercent(errorRate), 
+      label: "Hata Oranı" 
+    },
+    { 
+      value: Object.keys(defectTypes).length, 
+      label: "Hata Tipi Sayısı" 
     }
   ];
 

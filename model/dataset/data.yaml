@@ -1,0 +1,10 @@
+train: ./images/train
+val: ./images/val
+
+nc: 5
+names:
+  0: normal
+  1: ters_donmus
+  2: lekeli
+  3: delikli
+  4: eksen_kayik

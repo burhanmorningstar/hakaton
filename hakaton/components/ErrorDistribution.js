@@ -10,7 +10,7 @@ const CategoryBar = ({ category, total, index }) => {
       Animated.delay(index * 150),
       Animated.parallel([
         Animated.timing(widthAnim, {
-          toValue: (category.count / total) * 100,
+          toValue: total > 0 ? (category.count / total) * 100 : 0,
           duration: 800,
           useNativeDriver: false,
         }),
@@ -51,13 +51,29 @@ const CategoryBar = ({ category, total, index }) => {
 const ErrorDistribution = ({ statistics }) => {
   if (!statistics) return null;
   
-  const categories = [
-    { label: "0%", count: statistics.error_ranges["0"], color: "#00C49F" },
-    { label: "0-1%", count: statistics.error_ranges["0-1"], color: "#90EE90" },
-    { label: "1-2%", count: statistics.error_ranges["1-2"], color: "#FFBB28" },
-    { label: "2-3%", count: statistics.error_ranges["2-3"], color: "#FF8042" },
-    { label: "3%+", count: statistics.error_ranges["3+"], color: "#FF6347" }
-  ];
+  // Safely get defect_types with default empty object
+  const defectTypes = statistics.defect_types || {};
+  
+  // Convert defect_types object to array for rendering
+  const defectTypesArray = Object.entries(defectTypes).map(([key, value]) => ({
+    label: key,
+    count: value
+  }));
+  
+  // Sort by count (descending)
+  defectTypesArray.sort((a, b) => b.count - a.count);
+  
+  // Take top 5
+  const topDefects = defectTypesArray.slice(0, 5);
+  
+  // Define colors for the bars
+  const colors = ['#00C49F', '#FFBB28', '#FF8042', '#0088FE', '#FF6347'];
+  
+  // Add colors to the categories
+  const categories = topDefects.map((item, index) => ({
+    ...item,
+    color: colors[index % colors.length]
+  }));
   
   const total = categories.reduce((sum, cat) => sum + cat.count, 0);
 
@@ -80,6 +96,25 @@ const ErrorDistribution = ({ statistics }) => {
     ]).start();
   }, []);
 
+  if (categories.length === 0) {
+    return (
+      <Animated.View 
+        style={[
+          styles.chartContainer,
+          {
+            opacity: containerAnim,
+            transform: [{ translateY }]
+          }
+        ]}
+      >
+        <Text style={styles.chartTitle}>Hata Tipi Dağılımı</Text>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Henüz hata tipi bilgisi bulunmamaktadır.</Text>
+        </View>
+      </Animated.View>
+    );
+  }
+
   return (
     <Animated.View 
       style={[
@@ -90,7 +125,7 @@ const ErrorDistribution = ({ statistics }) => {
         }
       ]}
     >
-      <Text style={styles.chartTitle}>Hata Oranı Dağılımı</Text>
+      <Text style={styles.chartTitle}>Hata Tipi Dağılımı</Text>
       <View style={styles.distributionBars}>
         {categories.map((category, index) => (
           <CategoryBar 
@@ -158,6 +193,14 @@ const styles = StyleSheet.create({
   bar: {
     height: '100%',
     borderRadius: 5,
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#6B7280',
+    fontStyle: 'italic',
   }
 });
 
