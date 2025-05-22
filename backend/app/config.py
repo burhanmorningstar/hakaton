@@ -6,12 +6,12 @@ load_dotenv()
 
 class Config:
     # Database configuration
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_NAME = os.getenv("DB_NAME", "hakaton")
-    DB_USER = os.getenv("DB_USER", "postgres")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
-    DB_PORT = os.getenv("DB_PORT", "5432")
+    SQLITE_DB_PATH = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))), 'db.sqlite')
     
     # Flask configuration
     DEBUG = os.getenv("DEBUG", "True") == "True"
-    HOST = os.getenv("HOST", "0.0.0.0") 
+    HOST = os.getenv("HOST", "0.0.0.0")
+    
+    # Model configuration
+    MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))), 'best.pt'))
+    DETECTION_THRESHOLD = float(os.getenv("DETECTION_THRESHOLD", "0.5")) 

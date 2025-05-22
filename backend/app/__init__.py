@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from app.config import Config
+import os
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -21,6 +22,11 @@ def create_app(config_class=Config):
     app.register_blueprint(product_bp, url_prefix='/api')
     app.register_blueprint(stats_bp, url_prefix='/api')
     app.register_blueprint(image_bp, url_prefix='/api')
+    
+    # Register Unity endpoint at root level for compatibility
+    from app.routes.image_processing import upload_image_from_unity
+    app.add_url_rule('/upload_from_unity', 'upload_from_unity', 
+                     upload_image_from_unity, methods=['POST'])
     
     @app.route('/test', methods=['GET'])
     def test():

@@ -35,25 +35,21 @@ class Product:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM products")
-                products = []
-                for row in cursor.fetchall():
-                    product = {
-                        "id": row[0],
-                        "name": row[1],
-                        "production_count": row[3],
-                        "error_count": row[4]
-                    }
-                    # Calculate error_rate if it's None/NULL
-                    if row[2] is None:
-                        product["error_rate"] = Product.calculate_error_rate(row[4], row[3])
-                    else:
-                        product["error_rate"] = row[2]
-                    products.append(product)
-                
-                conn.close()
-                return products
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM product")
+            products = []
+            for row in cursor.fetchall():
+                product = {
+                    "id": row[0],
+                    "name": row[1],
+                    "error_rate": row[2],
+                    "production_count": row[3],
+                    "error_count": row[4]
+                }
+                products.append(product)
+            
+            conn.close()
+            return products
         except Exception as e:
             print(f"Error getting products: {e}")
             # Fall back to mock data if DB fails
@@ -66,41 +62,43 @@ class Product:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM products WHERE error_rate < %s OR (error_rate IS NULL AND error_count * 100.0 / NULLIF(production_count, 0) < %s)", (threshold, threshold))
-                error_free = []
-                for row in cursor.fetchall():
-                    product = {
-                        "id": row[0],
-                        "name": row[1],
-                        "production_count": row[3],
-                        "error_count": row[4]
-                    }
-                    # Calculate error_rate if it's None/NULL
-                    if row[2] is None:
-                        product["error_rate"] = Product.calculate_error_rate(row[4], row[3])
-                    else:
-                        product["error_rate"] = row[2]
-                    error_free.append(product)
-                
-                cursor.execute("SELECT * FROM products WHERE error_rate >= %s OR (error_rate IS NULL AND error_count * 100.0 / NULLIF(production_count, 0) >= %s)", (threshold, threshold))
-                faulty = []
-                for row in cursor.fetchall():
-                    product = {
-                        "id": row[0],
-                        "name": row[1],
-                        "production_count": row[3],
-                        "error_count": row[4]
-                    }
-                    # Calculate error_rate if it's None/NULL
-                    if row[2] is None:
-                        product["error_rate"] = Product.calculate_error_rate(row[4], row[3])
-                    else:
-                        product["error_rate"] = row[2]
-                    faulty.append(product)
-                
-                conn.close()
-                return error_free, faulty
+            cursor = conn.cursor()
+            
+            # For SQLite syntax, use ? instead of %s
+            cursor.execute("""
+                SELECT * FROM product 
+                WHERE error_rate < ?
+            """, (threshold,))
+            
+            error_free = []
+            for row in cursor.fetchall():
+                product = {
+                    "id": row[0],
+                    "name": row[1],
+                    "error_rate": row[2],
+                    "production_count": row[3],
+                    "error_count": row[4]
+                }
+                error_free.append(product)
+            
+            cursor.execute("""
+                SELECT * FROM product 
+                WHERE error_rate >= ?
+            """, (threshold,))
+            
+            faulty = []
+            for row in cursor.fetchall():
+                product = {
+                    "id": row[0],
+                    "name": row[1],
+                    "error_rate": row[2],
+                    "production_count": row[3],
+                    "error_count": row[4]
+                }
+                faulty.append(product)
+            
+            conn.close()
+            return error_free, faulty
         except Exception as e:
             print(f"Error getting products by threshold: {e}")
             # Fall back to mock data if DB fails
@@ -115,28 +113,23 @@ class Product:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT * FROM product LIMIT 1")
-                row = cursor.fetchone()
-                
-                if row:
-                    product = {
-                        "id": row[0],
-                        "name": row[1],
-                        "production_count": row[3],
-                        "error_count": row[4]
-                    }
-                    
-                    # Calculate error_rate if it's None/NULL
-                    if row[2] is None:
-                        product["error_rate"] = Product.calculate_error_rate(row[4], row[3])
-                    else:
-                        product["error_rate"] = row[2]
-                else:
-                    product = default_product
-                
-                conn.close()
-                return product
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM product LIMIT 1")
+            row = cursor.fetchone()
+            
+            if row:
+                product = {
+                    "id": row[0],
+                    "name": row[1],
+                    "error_rate": row[2],
+                    "production_count": row[3],
+                    "error_count": row[4]
+                }
+            else:
+                product = default_product
+            
+            conn.close()
+            return product
         except Exception as e:
             print(f"Error getting product: {e}")
             # Fall back to default data if DB fails
@@ -149,16 +142,26 @@ class Product:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
+            cursor = conn.cursor()
+            # Get current values to calculate error_rate
+            cursor.execute("SELECT production_count, error_count FROM product LIMIT 1")
+            row = cursor.fetchone()
+            
+            if row:
+                current_prod = row[0]
+                error_count = row[1]
+                new_prod = current_prod + count
+                
+                # Calculate new error rate
+                error_rate = Product.calculate_error_rate(error_count, new_prod)
+                
+                # Update with new values
                 cursor.execute("""
                     UPDATE product 
-                    SET production_count = production_count + %s,
-                        error_rate = CASE 
-                                        WHEN (production_count + %s) > 0 
-                                        THEN (error_count * 100.0 / (production_count + %s))
-                                        ELSE 0
-                                    END
-                """, (count, count, count))
+                    SET production_count = ?, error_rate = ?
+                """, (new_prod, error_rate))
+                
+                conn.commit()
             conn.close()
             return True
         except Exception as e:
@@ -172,16 +175,26 @@ class Product:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
+            cursor = conn.cursor()
+            
+            # Get current values
+            cursor.execute("SELECT production_count, error_count FROM product LIMIT 1")
+            row = cursor.fetchone()
+            
+            if row:
+                production_count = row[0]
+                error_count = row[1] + 1
+                
+                # Calculate new error rate
+                error_rate = Product.calculate_error_rate(error_count, production_count)
+                
+                # Update with new values
                 cursor.execute("""
                     UPDATE product 
-                    SET error_count = error_count + 1,
-                        error_rate = CASE 
-                                        WHEN production_count > 0 
-                                        THEN (error_count + 1) * 100.0 / production_count
-                                        ELSE 0
-                                    END
-                """)
+                    SET error_count = ?, error_rate = ?
+                """, (error_count, error_rate))
+                
+                conn.commit()
             conn.close()
             return True
         except Exception as e:
@@ -195,37 +208,19 @@ class Product:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                # Update the product table where error_rate is NULL
-                cursor.execute("""
-                    UPDATE product 
-                    SET error_rate = CASE 
-                                        WHEN production_count > 0 
-                                        THEN error_count * 100.0 / production_count
-                                        ELSE 0
-                                    END
-                    WHERE error_rate IS NULL
-                """)
-                
-                # Update products table if it exists (for multi-product setup)
-                cursor.execute("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables 
-                        WHERE table_name = 'products'
-                    )
-                """)
-                
-                if cursor.fetchone()[0]:  # If products table exists
-                    cursor.execute("""
-                        UPDATE products 
-                        SET error_rate = CASE 
-                                            WHEN production_count > 0 
-                                            THEN error_count * 100.0 / production_count
-                                            ELSE 0
-                                        END
-                        WHERE error_rate IS NULL
-                    """)
-                    
+            cursor = conn.cursor()
+            # Update the product table where error_rate is NULL
+            cursor.execute("""
+                UPDATE product 
+                SET error_rate = CASE 
+                                    WHEN production_count > 0 
+                                    THEN error_count * 100.0 / production_count
+                                    ELSE 0
+                                END
+                WHERE error_rate IS NULL
+            """)
+            
+            conn.commit()
             conn.close()
             return True
         except Exception as e:
@@ -239,13 +234,12 @@ class Product:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE product 
-                    SET error_count = 0,
-                        production_count = 0,
-                        error_rate = 0
-                """)
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE product
+                SET error_count = 0, production_count = 0, error_rate = 0
+            """)
+            conn.commit()
             conn.close()
             return True
         except Exception as e:

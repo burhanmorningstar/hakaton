@@ -33,6 +33,9 @@ export default function App() {
   const [errorThreshold, setErrorThreshold] = useState('2.0');
   const [filteredResults, setFilteredResults] = useState([]);
   const [thresholdMessage, setThresholdMessage] = useState('');
+  const [errorFreeProducts, setErrorFreeProducts] = useState([]);
+  const [faultyProducts, setFaultyProducts] = useState([]);
+  const [zeroErrorMessage, setZeroErrorMessage] = useState(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   
   // To prevent unnecessary re-renders
@@ -265,8 +268,9 @@ Hata: ${err.message || 'Bilinmeyen bağlantı hatası'}`,
     setFilteredResults(filtered);
   };
 
-  const handleApplyThreshold = () => {
+  const handleApplyThreshold = async () => {
     setThresholdMessage('');
+    setZeroErrorMessage(null);
     
     try {
       const threshold = parseFloat(errorThreshold);
@@ -275,7 +279,13 @@ Hata: ${err.message || 'Bilinmeyen bağlantı hatası'}`,
         return;
       }
       
+      // Apply to local UI
       applyThresholdFilter(detectionResults, threshold);
+      
+      // Update on server and get products by threshold
+      await updateServerThreshold(threshold);
+      await fetchProductsByThreshold();
+      
       setThresholdMessage(`Eşik değeri %${threshold} olarak ayarlandı.`);
       
     } catch (e) {
@@ -289,10 +299,13 @@ Hata: ${err.message || 'Bilinmeyen bağlantı hatası'}`,
     setRefreshing(true);
     
     try {
+      const threshold = await fetchThreshold();
+      
       await Promise.all([
         fetchStatistics(), 
         fetchProduct(),
-        fetchDetectionResults()
+        fetchDetectionResults(),
+        fetchProductsByThreshold()
       ]);
     } catch (err) {
       console.error("Error during manual refresh:", err);
@@ -312,10 +325,14 @@ Hata: ${err.message || 'Bilinmeyen bağlantı hatası'}`,
       dataFetchTimestamp.current = now;
       
       try {
+        // Fetch threshold first
+        const threshold = await fetchThreshold(true);
+        
         await Promise.all([
           fetchStatistics(true),
           fetchProduct(true),
-          fetchDetectionResults(true)
+          fetchDetectionResults(true),
+          fetchProductsByThreshold(true)
         ]);
       } catch (err) {
         console.error("Error during silent refresh:", err);
@@ -330,10 +347,14 @@ Hata: ${err.message || 'Bilinmeyen bağlantı hatası'}`,
     dataFetchTimestamp.current = Date.now();
     
     try {
+      // Fetch threshold first
+      const threshold = await fetchThreshold();
+      
       await Promise.all([
         fetchStatistics(), 
         fetchProduct(),
-        fetchDetectionResults()
+        fetchDetectionResults(),
+        fetchProductsByThreshold()
       ]);
       
       // Only animate on initial load
@@ -378,6 +399,65 @@ Hata: ${err.message || 'Bilinmeyen bağlantı hatası'}`,
       applyThresholdFilter(detectionResults, parseFloat(errorThreshold) || 2.0);
     }
   }, [detectionResults]);
+
+  const fetchThreshold = async (silent = false) => {
+    try {
+      const response = await fetchWithTimeout(`${getBaseUrl()}/api/threshold`);
+      if (!response.ok) {
+        throw new Error(`Sunucu hata kodu döndürdü: ${response.status}`);
+      }
+      const data = await response.json();
+      if (data.threshold) {
+        setErrorThreshold(data.threshold.toString());
+      }
+      return data.threshold;
+    } catch (error) {
+      console.error('Error fetching threshold:', error);
+      if (!silent) {
+        setError(`Eşik değeri alınırken hata oluştu: ${error.message || 'Sunucu bağlantı hatası'}`);
+      }
+      return parseFloat(errorThreshold);
+    }
+  };
+  
+  const updateServerThreshold = async (value) => {
+    try {
+      const response = await fetchWithTimeout(`${getBaseUrl()}/api/threshold`, {
+        method: 'POST',
+        body: JSON.stringify({ threshold: parseFloat(value) }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Sunucu hata kodu döndürdü: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Threshold updated on server:', data);
+      return true;
+    } catch (error) {
+      console.error('Error updating threshold on server:', error);
+      setError(`Eşik değeri güncellenirken hata oluştu: ${error.message || 'Sunucu bağlantı hatası'}`);
+      return false;
+    }
+  };
+  
+  const fetchProductsByThreshold = async (silent = false) => {
+    if (!silent) setRefreshing(true);
+    try {
+      const response = await fetchWithTimeout(`${getBaseUrl()}/api/products/by-threshold`);
+      if (!response.ok) throw new Error(`Sunucu hata kodu döndürdü: ${response.status}`);
+      const data = await response.json();
+      setErrorFreeProducts(data.error_free || []);
+      setFaultyProducts(data.faulty || []);
+      setZeroErrorMessage(data.message || null);
+      return data;
+    } catch (error) {
+      if (!silent) setError(`Ürünler alınırken hata oluştu: ${error.message || 'Sunucu bağlantı hatası'}`);
+      return null;
+    } finally {
+      if (!silent) setRefreshing(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -443,6 +523,38 @@ Hata: ${err.message || 'Bilinmeyen bağlantı hatası'}`,
                 loading={loading}
                 message={thresholdMessage}
               />
+              
+              {/* Display zero error message if exists */}
+              {zeroErrorMessage && (
+                <View style={styles.messageContainer}>
+                  <Text style={styles.messageText}>{zeroErrorMessage}</Text>
+                </View>
+              )}
+              
+              {/* Products categorized by error rate */}
+              {(errorFreeProducts && errorFreeProducts.length > 0) && (
+                <View style={styles.categoryContainer}>
+                  <Text style={styles.categoryTitle}>Hatasız Ürünler (0%)</Text>
+                  {errorFreeProducts.map((prod, index) => (
+                    <View key={`errorFree-${index}`} style={styles.productItem}>
+                      <Text style={styles.productName}>{prod.name}</Text>
+                      <Text style={styles.productErrorRate}>{prod.error_rate.toFixed(2)}%</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+              
+              {(faultyProducts && faultyProducts.length > 0) && (
+                <View style={[styles.categoryContainer, styles.faultyContainer]}>
+                  <Text style={styles.categoryTitle}>Hatalı Ürünler</Text>
+                  {faultyProducts.map((prod, index) => (
+                    <View key={`faulty-${index}`} style={styles.productItem}>
+                      <Text style={styles.productName}>{prod.name}</Text>
+                      <Text style={[styles.productErrorRate, styles.faultyRate]}>{prod.error_rate.toFixed(2)}%</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
               
               <ErrorDistribution statistics={statistics} />
               
@@ -532,5 +644,56 @@ const styles = StyleSheet.create({
   refreshingText: {
     color: '#6B7280',
     fontSize: 12,
-  }
+  },
+  messageContainer: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  messageText: {
+    color: '#B91C1C',
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  categoryContainer: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 2,
+  },
+  categoryTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 10,
+  },
+  productItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  productName: {
+    fontSize: 14,
+    color: '#4B5563',
+  },
+  productErrorRate: {
+    fontSize: 14,
+    color: '#4B5563',
+  },
+  faultyContainer: {
+    borderTopWidth: 1,
+    borderTopColor: '#FECACA',
+  },
+  faultyRate: {
+    color: '#EF4444',
+  },
 });

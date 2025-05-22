@@ -6,23 +6,25 @@ class ImageResult:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                # Insert image processing result
-                cursor.execute("""
-                    INSERT INTO image_processing_results
-                    (defect_type, confidence_score, location_x, location_y, width, height)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                """, (
-                    data['defect_type'],
-                    data['confidence_score'],
-                    data['location_x'],
-                    data['location_y'],
-                    data['width'],
-                    data['height']
-                ))
-                
-                result_id = cursor.fetchone()[0]
+            cursor = conn.cursor()
+            
+            # Insert image processing result
+            cursor.execute("""
+                INSERT INTO image_processing_results
+                (defect_type, confidence_score, location_x, location_y, width, height, is_defected)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                data.get('defect_type', ''),
+                data.get('confidence_score', 0),
+                data.get('location_x', 0),
+                data.get('location_y', 0),
+                data.get('width', 0),
+                data.get('height', 0),
+                data.get('is_defected', 0)
+            ))
+            
+            result_id = cursor.lastrowid
+            conn.commit()
             conn.close()
             
             # Update product error stats
@@ -41,38 +43,40 @@ class ImageResult:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                if limit:
-                    cursor.execute("""
-                        SELECT id, timestamp, defect_type, confidence_score, 
-                        location_x, location_y, width, height
-                        FROM image_processing_results
-                        ORDER BY timestamp DESC
-                        LIMIT %s
-                    """, (limit,))
-                else:
-                    cursor.execute("""
-                        SELECT id, timestamp, defect_type, confidence_score, 
-                        location_x, location_y, width, height
-                        FROM image_processing_results
-                        ORDER BY timestamp DESC
-                    """)
-                    
-                results = []
-                for row in cursor.fetchall():
-                    results.append({
-                        "id": row[0],
-                        "timestamp": row[1].isoformat(),
-                        "defect_type": row[2],
-                        "confidence_score": row[3],
-                        "location_x": row[4],
-                        "location_y": row[5],
-                        "width": row[6],
-                        "height": row[7]
-                    })
+            cursor = conn.cursor()
+            
+            if limit:
+                cursor.execute("""
+                    SELECT id, timestamp, defect_type, confidence_score, 
+                    location_x, location_y, width, height, is_defected
+                    FROM image_processing_results
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """, (limit,))
+            else:
+                cursor.execute("""
+                    SELECT id, timestamp, defect_type, confidence_score, 
+                    location_x, location_y, width, height, is_defected
+                    FROM image_processing_results
+                    ORDER BY timestamp DESC
+                """)
                 
-                conn.close()
-                return results
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    "id": row[0],
+                    "timestamp": row[1],
+                    "defect_type": row[2],
+                    "confidence_score": row[3],
+                    "location_x": row[4],
+                    "location_y": row[5],
+                    "width": row[6],
+                    "height": row[7],
+                    "is_defected": bool(row[8])
+                })
+            
+            conn.close()
+            return results
         except Exception as e:
             print(f"Error getting image results: {e}")
             return []
@@ -84,8 +88,9 @@ class ImageResult:
         
         try:
             conn = get_db_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM image_processing_results")
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM image_processing_results")
+            conn.commit()
             conn.close()
             return True
         except Exception as e:
