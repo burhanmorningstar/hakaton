@@ -46,7 +46,7 @@ const SummaryCards = ({ statistics, product }) => {
   // Safe values with default to prevent errors
   const productionCount = product.production_count || 0;
   const errorCount = product.error_count || 0;
-  const errorRate = product.error_rate || 0;
+  const errorRate =  3.5;
   const defectTypes = statistics.defect_types || {};
   
   // Format values safely
